@@ -1,0 +1,42 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependency directories
+node_modules/
+
+# Vite build output
+dist/
+build/
+
+# Local env files
+.env
+.env.local
+.env.*.local
+*.env
+
+# Editor / IDE folders
+.vscode/
+.idea/
+
+# Mac system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# Local cache
+*.cache
+.cache/
+vite.svg
+
+# Optional: TypeScript cache
+*.tsbuildinfo
+
+# Optional: Yarn / pnpm stuff
+.yarn/*
+.pnp.*
