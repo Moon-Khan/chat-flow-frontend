@@ -1,7 +1,7 @@
 import React, { useContext, useState, useEffect } from 'react';
 import { AuthContext } from '../../context/AuthContext';
 import { useSocket } from '../../context/SocketContext';
-import { messageAPI, authAPI } from '../../services/api';
+import { messageAPI, authAPI, storyAPI } from '../../services/api';
 import {
     ChatContainer,
     Sidebar,
@@ -23,10 +23,10 @@ import {
     EmptyStateText,
     EmptyStateSubtext,
 } from '../../Components/chat';
-import { Avatar, Input, Button } from '../../Components/ui';
+import { Avatar, Input, Button, AlertModal, Modal, ConfirmModal } from '../../Components/ui';
 import { useRef } from 'react';
 import { FiSearch, FiMessageSquare, FiUsers, FiSend, FiLogOut, FiPaperclip, FiCamera, FiX, FiTrash2, FiMoreVertical, FiDisc, FiPlus, FiEye, FiSettings, FiGrid, FiLayers } from 'react-icons/fi';
-import styled from 'styled-components';
+import styled, { useTheme } from 'styled-components';
 
 // -----------------------------------------------------------------
 // Utilities
@@ -201,6 +201,7 @@ const MessageBubble = styled.div`
 `;
 
 const ChatPage = () => {
+    const theme = useTheme();
     const { user, logout, updateUser } = useContext(AuthContext);
     const { socket, onlineUsers } = useSocket();
 
@@ -230,21 +231,45 @@ const ChatPage = () => {
     const [activeMessageOptions, setActiveMessageOptions] = useState(null); // { _id, isOwn }
 
     // Story state
+    const [allStories, setAllStories] = useState([]);
     const [viewingStoryUser, setViewingStoryUser] = useState(null);
-    const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
+    const [activeStoryIndex, setActiveStoryIndex] = useState(0);
+    const [pendingStoryFiles, setPendingStoryFiles] = useState([]);
+    const [showStoryPrivacyModal, setShowStoryPrivacyModal] = useState(false);
+    const [storyUploadConfigs, setStoryUploadConfigs] = useState([]); // Array of { file, privacy, allowedUsers }
+    const [showViewersList, setShowViewersList] = useState(false);
 
     // Profile State
     const [showProfileModal, setShowProfileModal] = useState(false);
     const [profileMode, setProfileMode] = useState('view'); // 'view' | 'edit'
+    const [settingsTab, setSettingsTab] = useState('profile'); // 'profile' | 'security'
     const [viewingUser, setViewingUser] = useState(null);
     const [editAbout, setEditAbout] = useState('');
     const [editAvatar, setEditAvatar] = useState(null);
     const [showMobileChat, setShowMobileChat] = useState(false);
+    const [storyPrivacy, setStoryPrivacy] = useState(user?.storyPrivacy || 'everyone');
+    const [storyAllowedUsers, setStoryAllowedUsers] = useState(user?.storyAllowedUsers || []);
+    const [statusPrivacy, setStatusPrivacy] = useState(user?.statusPrivacy || 'everyone');
+    const [statusAllowedUsers, setStatusAllowedUsers] = useState(user?.statusAllowedUsers || []);
+    const [showNewChatModal, setShowNewChatModal] = useState(false);
+    const [userSearchQuery, setUserSearchQuery] = useState('');
+    const [alertConfig, setAlertConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
+    const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { }, type: 'danger' });
+
+    const showAlert = (title, message, type = 'info') => {
+        setAlertConfig({ isOpen: true, title, message, type });
+    };
+
+    const showConfirm = (title, message, onConfirm, type = 'danger') => {
+        setConfirmConfig({ isOpen: true, title, message, onConfirm, type });
+    };
+
     const avatarInputRef = useRef(null);
 
     const fileInputRef = useRef(null);
     const videoRef = useRef(null);
     const canvasRef = useRef(null);
+    const messagesEndRef = useRef(null);
 
     // -----------------------------------------------------------------
     // Data Fetching
@@ -261,11 +286,17 @@ const ChatPage = () => {
     const fetchConversations = async () => {
         try {
             const { data } = await messageAPI.getConversations();
-            setConversations(data);
+            // Sort conversations by latest message date
+            const sortedConversations = [...data].sort((a, b) => {
+                const dateA = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt) : new Date(a.createdAt || 0);
+                const dateB = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt) : new Date(b.createdAt || 0);
+                return dateB - dateA;
+            });
+            setConversations(sortedConversations);
 
             // If active chat is open, update it to get latest members/status
             if (activeChat) {
-                const refreshed = data.find(c =>
+                const refreshed = sortedConversations.find(c =>
                     (c.type === 'group' && c._id === activeChat._id) ||
                     (c.type === 'private' && c.user._id === (activeChat._id || activeChat.user?._id))
                 );
@@ -292,10 +323,43 @@ const ChatPage = () => {
         }
     };
 
+    const fetchStories = async () => {
+        try {
+            const { data } = await storyAPI.getStories();
+            // Sort stories: current user's story first, then others
+            const sortedStories = [...data].sort((a, b) => {
+                if (String(a.user._id) === String(user.id)) return -1;
+                if (String(b.user._id) === String(user.id)) return 1;
+                return 0;
+            });
+            setAllStories(sortedStories);
+        } catch (e) {
+            console.error('Failed to fetch stories', e);
+        }
+    };
+
     useEffect(() => {
         fetchUsers();
         fetchConversations();
+        fetchStories();
     }, []);
+
+    // Mark story as viewed when active
+    useEffect(() => {
+        if (!viewingStoryUser || !viewingStoryUser.stories) return;
+        const currentStory = viewingStoryUser.stories[activeStoryIndex];
+        if (currentStory && String(viewingStoryUser.user._id) !== String(user.id)) {
+            storyAPI.viewStory(currentStory._id).catch(err => console.error("Failed to mark story as viewed", err));
+        }
+    }, [viewingStoryUser, activeStoryIndex, user.id]);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, activeChat]);
 
     // -----------------------------------------------------------------
     // Socket Logic
@@ -396,16 +460,21 @@ const ChatPage = () => {
 
     const handleLeaveGroup = async () => {
         if (!activeChat || !activeChat.isGroup && activeChat.type !== 'group') return;
-        if (!window.confirm(`Are you sure you want to leave ${activeChat.name}?`)) return;
 
-        try {
-            await messageAPI.leaveGroup(activeChat._id);
-            setActiveChat(null);
-            setShowGroupInfo(false);
-            fetchConversations();
-        } catch (e) {
-            console.error('Failed to leave group', e);
-        }
+        showConfirm(
+            "Leave Group",
+            `Are you sure you want to leave ${activeChat.name}?`,
+            async () => {
+                try {
+                    await messageAPI.leaveGroup(activeChat._id);
+                    setActiveChat(null);
+                    setShowGroupInfo(false);
+                    fetchConversations();
+                } catch (e) {
+                    console.error('Failed to leave group', e);
+                }
+            }
+        );
     };
 
     const toggleParticipant = (userId) => {
@@ -583,11 +652,122 @@ const ChatPage = () => {
         }
     };
 
+    const confirmStoryUpload = async () => {
+        setUploading(true);
+        setShowStoryPrivacyModal(false);
+        try {
+            // Group stories by their privacy configuration to upload in batches
+            const batches = storyUploadConfigs.reduce((acc, config) => {
+                const key = `${config.privacy}-${JSON.stringify(config.allowedUsers.sort())}`;
+                if (!acc[key]) {
+                    acc[key] = {
+                        privacy: config.privacy,
+                        allowedUsers: config.allowedUsers,
+                        files: []
+                    };
+                }
+                acc[key].files.push(config.file);
+                return acc;
+            }, {});
+
+            // Upload each batch
+            for (const key in batches) {
+                const batch = batches[key];
+                const formData = new FormData();
+                batch.files.forEach(file => {
+                    formData.append('files', file);
+                });
+                formData.append('privacy', batch.privacy);
+                formData.append('allowedUsers', JSON.stringify(batch.allowedUsers));
+
+                await storyAPI.uploadStory(formData);
+            }
+
+            fetchStories();
+            showAlert("Success", "Stories uploaded successfully!", "success");
+            setStoryUploadConfigs([]);
+        } catch (err) {
+            console.error("Story upload failed", err);
+            showAlert("Error", "Failed to upload some stories", "error");
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleStoryUpload = (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        const initialConfigs = files.map(file => ({
+            id: Math.random().toString(36).substr(2, 9),
+            file,
+            privacy: user?.storyPrivacy || 'everyone',
+            allowedUsers: user?.storyAllowedUsers || []
+        }));
+
+        setStoryUploadConfigs(initialConfigs);
+        setShowStoryPrivacyModal(true);
+        // Clear input value so same files can be selected again if needed
+        e.target.value = '';
+    };
+
+    const handleDeleteStory = async (storyId) => {
+        showConfirm(
+            "Delete Story",
+            "Are you sure you want to delete this story? This action cannot be undone.",
+            async () => {
+                try {
+                    await storyAPI.deleteStory(storyId);
+
+                    // Update local state
+                    const updatedStories = allStories.map(item => {
+                        if (String(item.user._id) === String(user.id)) {
+                            return {
+                                ...item,
+                                stories: item.stories.filter(s => s._id !== storyId)
+                            };
+                        }
+                        return item;
+                    }).filter(item => item.stories.length > 0);
+
+                    setAllStories(updatedStories);
+
+                    // Handle viewer navigation after delete
+                    if (activeStoryIndex >= viewingStoryUser.stories.length - 1) {
+                        if (viewingStoryUser.stories.length <= 1) {
+                            setViewingStoryUser(null);
+                        } else {
+                            setActiveStoryIndex(prev => prev - 1);
+                        }
+                    }
+
+                    showAlert("Deleted", "Story has been deleted", "success");
+                } catch (err) {
+                    console.error("Failed to delete story", err);
+                    showAlert("Error", "Failed to delete story", "error");
+                }
+            }
+        );
+    };
+
     // -----------------------------------------------------------------
     // Filtering
     // -----------------------------------------------------------------
     // Filtering
     // -----------------------------------------------------------------
+    const canSeeStatus = (targetUser) => {
+        if (!targetUser) return false;
+        if (targetUser._id === user.id) return true;
+
+        const privacy = targetUser.statusPrivacy || 'everyone';
+        if (privacy === 'everyone') return true;
+        if (privacy === 'nobody') return false;
+        if (privacy === 'selected') {
+            return (targetUser.statusAllowedUsers || []).some(id => String(id) === String(user.id));
+        }
+        return true;
+    };
+
     const filteredConversations = conversations.filter(c => {
         if (activeTab === 'chats' && (c.type === 'group' || c.isGroup)) return false;
         if (activeTab === 'groups' && c.type !== 'group' && !c.isGroup) return false;
@@ -597,7 +777,8 @@ const ChatPage = () => {
 
 
     const filteredUsers = users.filter(u =>
-        u.username.toLowerCase().includes(searchQuery.toLowerCase())
+        u.username.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+        u.email.toLowerCase().includes(userSearchQuery.toLowerCase())
     );
 
 
@@ -614,6 +795,10 @@ const ChatPage = () => {
                     setViewingUser(user);
                     setProfileMode('edit');
                     setEditAbout(user.about || '');
+                    setStoryPrivacy(user.storyPrivacy || 'everyone');
+                    setStoryAllowedUsers(user.storyAllowedUsers || []);
+                    setStatusPrivacy(user.statusPrivacy || 'everyone');
+                    setStatusAllowedUsers(user.statusAllowedUsers || []);
                     setShowProfileModal(true);
                 }}
             />
@@ -621,20 +806,47 @@ const ChatPage = () => {
             {/* Sidebar (List Pane) */}
             <Sidebar $showMobileChat={!showMobileChat || !activeChat}>
                 <SidebarHeader>
-                    <div style={{ marginBottom: '1.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>
                             {activeTab === 'chats' ? 'Messages' : activeTab === 'groups' ? 'Groups' : 'Stories'}
                         </h2>
+                        {activeTab === 'chats' && (
+                            <button
+                                onClick={() => {
+                                    setUserSearchQuery('');
+                                    fetchUsers();
+                                    setShowNewChatModal(true);
+                                }}
+                                style={{
+                                    width: '32px',
+                                    height: '32px',
+                                    borderRadius: '50%',
+                                    background: theme.colors.primary[500],
+                                    color: 'white',
+                                    border: 'none',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+                                }}
+                                title="New Chat"
+                            >
+                                <FiPlus size={20} />
+                            </button>
+                        )}
                     </div>
 
-                    <SearchContainer>
-                        <FiSearch size={18} />
-                        <Input
-                            placeholder={`Search ${activeTab === 'chats' ? 'chats' : activeTab === 'groups' ? 'groups' : 'stories'}...`}
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                        />
-                    </SearchContainer>
+                    {activeTab !== 'stories' && (
+                        <SearchContainer>
+                            <FiSearch size={18} />
+                            <Input
+                                placeholder={`Search ${activeTab === 'chats' ? 'chats' : activeTab === 'groups' ? 'groups' : 'stories'}...`}
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </SearchContainer>
+                    )}
 
                     {activeTab === 'groups' && !isCreatingGroup && (
                         <Button $fullWidth $variant="secondary" onClick={() => setIsCreatingGroup(true)} style={{ marginBottom: '1rem' }}>
@@ -732,7 +944,7 @@ const ChatPage = () => {
                                             ) : (
                                                 displayName[0].toUpperCase()
                                             )}
-                                            {!isGroup && <StatusIndicator $online={onlineUsers?.has(chat.user._id)} />}
+                                            {!isGroup && <StatusIndicator $online={canSeeStatus(chat.user) && onlineUsers?.has(chat.user._id)} />}
                                         </ChatAvatar>
                                         <ChatInfo>
                                             <ChatName>{displayName} {isGroup && <span style={{ fontSize: '0.7rem', color: '#6B7280', fontWeight: 400 }}>(Group)</span>}</ChatName>
@@ -752,12 +964,117 @@ const ChatPage = () => {
                                 );
                             })
                         ) : activeTab === 'stories' ? (
-                            <div style={{ padding: '1rem', textAlign: 'center', color: '#6B7280' }}>
-                                <div style={{ marginBottom: '1rem', border: '1px dashed #ccc', borderRadius: '1rem', padding: '2rem' }}>
-                                    <FiPlus size={32} />
-                                    <div style={{ marginTop: '0.5rem' }}>Add to Story</div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1rem' }}>
+                                {/* Add Story Button - Small and Pinned */}
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '1rem',
+                                        padding: '0.75rem 1rem',
+                                        background: theme.colors.primary[50],
+                                        borderRadius: '1rem',
+                                        cursor: 'pointer',
+                                        marginBottom: '0.5rem',
+                                        border: `1px solid ${theme.colors.primary[100]}`,
+                                        transition: 'all 0.2s ease'
+                                    }}
+                                    onClick={() => document.getElementById('story-upload-input').click()}
+                                    onMouseOver={(e) => e.currentTarget.style.background = theme.colors.primary[100]}
+                                    onMouseOut={(e) => e.currentTarget.style.background = theme.colors.primary[50]}
+                                >
+                                    <input
+                                        type="file"
+                                        id="story-upload-input"
+                                        multiple
+                                        accept="image/*,video/*"
+                                        style={{ display: 'none' }}
+                                        onChange={handleStoryUpload}
+                                    />
+                                    <div style={{
+                                        width: '40px',
+                                        height: '40px',
+                                        borderRadius: '50%',
+                                        background: theme.colors.primary[500],
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        color: 'white'
+                                    }}>
+                                        <FiPlus size={20} />
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: 600, fontSize: '0.95rem', color: theme.colors.primary[700] }}>
+                                            {uploading ? 'Uploading...' : 'Add Story'}
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: theme.colors.primary[600] }}>Share your moments</div>
+                                    </div>
                                 </div>
-                                <div>No stories available yet.</div>
+
+                                {/* Stories List */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    {allStories.length === 0 ? (
+                                        <div style={{ textAlign: 'center', padding: '2rem', color: theme.colors.text.tertiary, fontSize: '0.9rem' }}>
+                                            No stories available yet.
+                                        </div>
+                                    ) : (
+                                        allStories.map((item) => (
+                                            <ChatItem
+                                                key={item.user._id}
+                                                onClick={() => {
+                                                    setViewingStoryUser(item);
+                                                    setActiveStoryIndex(0);
+                                                }}
+                                                style={{
+                                                    background: item.user._id === user.id ? theme.colors.surface : 'transparent',
+                                                    border: item.user._id === user.id ? `1px solid ${theme.colors.border}` : 'transparent',
+                                                }}
+                                            >
+                                                <ChatAvatar>
+                                                    {item.user.avatarUrl ? (
+                                                        <img
+                                                            src={`${BACKEND_URL}${item.user.avatarUrl}`}
+                                                            alt={item.user.username}
+                                                            style={{
+                                                                width: '100%',
+                                                                height: '100%',
+                                                                borderRadius: '50%',
+                                                                objectFit: 'cover',
+                                                                border: `2px solid ${theme.colors.primary[500]}`,
+                                                                padding: '2px'
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <div style={{
+                                                            width: '100%',
+                                                            height: '100%',
+                                                            borderRadius: '50%',
+                                                            background: theme.colors.primary[100],
+                                                            color: theme.colors.primary[700],
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'center',
+                                                            fontWeight: 600,
+                                                            border: `2px solid ${theme.colors.primary[500]}`
+                                                        }}>
+                                                            {item.user.username[0].toUpperCase()}
+                                                        </div>
+                                                    )}
+                                                </ChatAvatar>
+                                                <ChatInfo>
+                                                    <ChatName>
+                                                        {item.user._id === user.id ? (
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                                My Story <span style={{ fontSize: '0.7rem', color: theme.colors.text.tertiary, fontWeight: 400 }}>(Pinned)</span>
+                                                            </span>
+                                                        ) : item.user.username}
+                                                    </ChatName>
+                                                    <ChatMessage>{item.stories.length} stories shared</ChatMessage>
+                                                </ChatInfo>
+                                            </ChatItem>
+                                        ))
+                                    )}
+                                </div>
                             </div>
                         ) : null
                     )}</ChatList>
@@ -817,8 +1134,8 @@ const ChatPage = () => {
                                     </Avatar>
                                     <div>
                                         <div style={{ fontWeight: 600, fontSize: '1.1rem' }}>{activeChat.name || activeChat.username || activeChat.user?.username}</div>
-                                        <div style={{ fontSize: '0.85rem', color: (activeChat.type === 'group' || activeChat.isGroup) ? '#6B7280' : (onlineUsers?.has(activeChat._id || activeChat.user?._id) ? '#10B981' : '#6B7280') }}>
-                                            {(activeChat.type === 'group' || activeChat.isGroup) ? `${activeChat.participants?.length || 0} members` : (onlineUsers?.has(activeChat._id || activeChat.user?._id) ? 'Online' : 'Offline')}
+                                        <div style={{ fontSize: '0.85rem', color: (activeChat.type === 'group' || activeChat.isGroup) ? '#6B7280' : (onlineUsers?.has(activeChat._id || activeChat.user?._id) && canSeeStatus(activeChat.user || activeChat) ? '#10B981' : '#6B7280') }}>
+                                            {(activeChat.type === 'group' || activeChat.isGroup) ? `${activeChat.participants?.length || 0} members` : (onlineUsers?.has(activeChat._id || activeChat.user?._id) && canSeeStatus(activeChat.user || activeChat) ? 'Online' : 'Offline')}
                                         </div>
                                     </div>
                                 </div>
@@ -1039,6 +1356,7 @@ const ChatPage = () => {
                                         );
                                     });
                                 })()}
+                                <div ref={messagesEndRef} />
                             </ChatArea>
 
                             {/* Fullscreen Lightbox Overlay */}
@@ -1046,7 +1364,7 @@ const ChatPage = () => {
                                 fullscreenImage && (
                                     <div style={{
                                         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.9)',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2500
                                     }} onClick={closeFullscreen}>
                                         <div style={{ position: 'absolute', top: '20px', right: '20px' }}>
                                             <Button $variant="ghost" onClick={closeFullscreen} style={{ color: 'white', padding: '10px' }}>
@@ -1220,13 +1538,31 @@ const ChatPage = () => {
                         </>
                     ) : (
                         <EmptyState>
-                            <EmptyStateIcon>
-                                <FiMessageSquare size={64} />
-                            </EmptyStateIcon>
-                            <EmptyStateText>Welcome to ChatFlow</EmptyStateText>
-                            <EmptyStateSubtext>
-                                Select a user or conversation from the sidebar to start messaging.
+                            <div style={{
+                                width: '120px',
+                                height: '120px',
+                                borderRadius: '50%',
+                                background: 'linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                marginBottom: '2rem',
+                                color: theme.colors.primary[500],
+                                boxShadow: '0 10px 15px -3px rgba(79, 70, 229, 0.1)'
+                            }}>
+                                <FiMessageSquare size={48} />
+                            </div>
+                            <EmptyStateText>Welcome to ChatFlow, {user.username}!</EmptyStateText>
+                            <EmptyStateSubtext style={{ maxWidth: '300px', margin: '0.5rem auto 2rem' }}>
+                                Start a fresh conversation with your friends and colleagues. Your private messages will appear here.
                             </EmptyStateSubtext>
+                            <Button size="lg" onClick={() => {
+                                setUserSearchQuery('');
+                                fetchUsers();
+                                setShowNewChatModal(true);
+                            }} style={{ boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.2)' }}>
+                                Start Chatting
+                            </Button>
                         </EmptyState>
                     )}
 
@@ -1239,202 +1575,702 @@ const ChatPage = () => {
                         display: 'flex', alignItems: 'center', justifyContent: 'center'
                     }} onClick={() => setShowProfileModal(false)}>
                         <div style={{
-                            background: 'white', padding: '2rem', borderRadius: '1rem', width: '400px', maxWidth: '90%',
-                            position: 'relative', display: 'flex', flexDirection: 'column', gap: '1.5rem',
-                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+                            background: 'white', borderRadius: '1.5rem', width: '700px', maxWidth: '95%',
+                            height: '550px', maxHeight: '90vh',
+                            position: 'relative', display: 'flex',
+                            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+                            overflow: 'hidden'
                         }} onClick={e => e.stopPropagation()}>
 
-                            <div style={{ position: 'absolute', top: '1rem', right: '1rem', cursor: 'pointer' }} onClick={() => setShowProfileModal(false)}>
-                                <FiX size={24} />
+                            {/* Settings Sidebar */}
+                            <div style={{
+                                width: '220px',
+                                background: '#F9FAFB',
+                                borderRight: '1px solid #E5E7EB',
+                                padding: '1.5rem 0',
+                                display: 'flex',
+                                flexDirection: 'column'
+                            }}>
+                                <div style={{ padding: '0 1.5rem 1.5rem', fontWeight: 700, fontSize: '1.2rem', color: '#111827' }}>Settings</div>
+                                <div
+                                    onClick={() => setSettingsTab('profile')}
+                                    style={{
+                                        padding: '0.75rem 1.5rem', cursor: 'pointer',
+                                        background: settingsTab === 'profile' ? '#EEF2FF' : 'transparent',
+                                        color: settingsTab === 'profile' ? '#4F46E5' : '#4B5563',
+                                        fontWeight: settingsTab === 'profile' ? 600 : 400,
+                                        borderLeft: settingsTab === 'profile' ? '4px solid #4F46E5' : '4px solid transparent'
+                                    }}
+                                >
+                                    My Profile
+                                </div>
+                                <div
+                                    onClick={() => setSettingsTab('security')}
+                                    style={{
+                                        padding: '0.75rem 1.5rem', cursor: 'pointer',
+                                        background: settingsTab === 'security' ? '#EEF2FF' : 'transparent',
+                                        color: settingsTab === 'security' ? '#4F46E5' : '#4B5563',
+                                        fontWeight: settingsTab === 'security' ? 600 : 400,
+                                        borderLeft: settingsTab === 'security' ? '4px solid #4F46E5' : '4px solid transparent'
+                                    }}
+                                >
+                                    Privacy & Security
+                                </div>
                             </div>
 
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                                <div style={{ position: 'relative' }}>
-                                    <div style={{
-                                        width: '100px', height: '100px', borderRadius: '50%', overflow: 'hidden',
-                                        background: '#E0E7FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '2.5rem', color: '#4F46E5', fontWeight: 'bold'
-                                    }}>
-                                        {profileMode === 'edit' && editAvatar ? (
-                                            <img src={URL.createObjectURL(editAvatar)} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                        ) : (
-                                            viewingUser.avatarUrl ? (
-                                                <img src={`${BACKEND_URL}${viewingUser.avatarUrl}`} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                                            ) : (
-                                                viewingUser.username?.[0]?.toUpperCase()
-                                            )
-                                        )}
-                                    </div>
-                                    {profileMode === 'edit' && (
-                                        <div
-                                            style={{
-                                                position: 'absolute', bottom: 0, right: 0, background: '#3B82F6', color: 'white',
-                                                borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center',
-                                                justifyContent: 'center', cursor: 'pointer', border: '2px solid white'
-                                            }}
-                                            onClick={() => avatarInputRef.current.click()}
-                                        >
-                                            <FiCamera size={16} />
+                            {/* Settings Content */}
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                <div style={{ position: 'absolute', top: '1.5rem', right: '1.5rem', cursor: 'pointer', zIndex: 10 }} onClick={() => setShowProfileModal(false)}>
+                                    <FiX size={24} color="#6B7280" />
+                                </div>
+
+                                <div style={{ flex: 1, padding: '2rem', overflowY: 'auto' }}>
+                                    {settingsTab === 'profile' ? (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+                                                <div style={{ position: 'relative' }}>
+                                                    <div style={{
+                                                        width: '100px', height: '100px', borderRadius: '50%', overflow: 'hidden',
+                                                        background: '#E0E7FF', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        fontSize: '2.5rem', color: '#4F46E5', fontWeight: 'bold'
+                                                    }}>
+                                                        {profileMode === 'edit' && editAvatar ? (
+                                                            <img src={URL.createObjectURL(editAvatar)} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        ) : (
+                                                            viewingUser.avatarUrl ? (
+                                                                <img src={`${BACKEND_URL}${viewingUser.avatarUrl}`} alt="avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                            ) : (
+                                                                viewingUser.username?.[0]?.toUpperCase()
+                                                            )
+                                                        )}
+                                                    </div>
+                                                    {profileMode === 'edit' && (
+                                                        <div
+                                                            style={{
+                                                                position: 'absolute', bottom: 0, right: 0, background: '#3B82F6', color: 'white',
+                                                                borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center',
+                                                                justifyContent: 'center', cursor: 'pointer', border: '2px solid white'
+                                                            }}
+                                                            onClick={() => avatarInputRef.current.click()}
+                                                        >
+                                                            <FiCamera size={16} />
+                                                        </div>
+                                                    )}
+                                                    <input
+                                                        type="file"
+                                                        ref={avatarInputRef}
+                                                        style={{ display: 'none' }}
+                                                        accept="image/*"
+                                                        onChange={(e) => setEditAvatar(e.target.files[0])}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#111827' }}>{viewingUser.username}</div>
+                                                    <div style={{ color: '#6B7280' }}>{viewingUser.email}</div>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <div style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.75rem' }}>About</div>
+                                                {profileMode === 'edit' ? (
+                                                    <textarea
+                                                        value={editAbout}
+                                                        onChange={(e) => setEditAbout(e.target.value)}
+                                                        rows={4}
+                                                        style={{
+                                                            width: '100%', padding: '0.75rem', borderRadius: '0.75rem', border: '1px solid #D1D5DB',
+                                                            fontFamily: 'inherit', resize: 'none', transition: 'border-color 0.2s'
+                                                        }}
+                                                        placeholder="Write something about yourself..."
+                                                    />
+                                                ) : (
+                                                    <div style={{
+                                                        padding: '1rem', background: '#F9FAFB', borderRadius: '0.75rem', color: '#4B5563',
+                                                        fontStyle: viewingUser.about ? 'normal' : 'italic', minHeight: '80px', border: '1px solid #F3F4F6'
+                                                    }}>
+                                                        {viewingUser.about || "No about info set."}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                                            <div style={{ borderBottom: '1px solid #F3F4F6', paddingBottom: '1rem' }}>
+                                                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#111827' }}>Privacy & Security</div>
+                                                <div style={{ fontSize: '0.9rem', color: '#6B7280' }}>Manage your account security and content visibility.</div>
+                                            </div>
+
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                                                <div>
+                                                    <div style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>Default Story Privacy</div>
+                                                    <div style={{ fontSize: '0.85rem', color: '#6B7280', marginBottom: '1rem' }}>This setting applies to all your stories unless changed during upload.</div>
+                                                    <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+                                                        <button
+                                                            onClick={() => profileMode === 'edit' && setStoryPrivacy('everyone')}
+                                                            style={{
+                                                                flex: 1, padding: '0.75rem', borderRadius: '0.75rem',
+                                                                border: '1px solid', borderColor: storyPrivacy === 'everyone' ? '#4F46E5' : '#D1D5DB',
+                                                                background: storyPrivacy === 'everyone' ? '#EEF2FF' : 'white',
+                                                                color: storyPrivacy === 'everyone' ? '#4F46E5' : '#374151',
+                                                                fontWeight: 600, cursor: profileMode === 'edit' ? 'pointer' : 'default',
+                                                                opacity: profileMode === 'edit' ? 1 : 0.8
+                                                            }}
+                                                        >
+                                                            Everyone
+                                                        </button>
+                                                        <button
+                                                            onClick={() => profileMode === 'edit' && setStoryPrivacy('selected')}
+                                                            style={{
+                                                                flex: 1, padding: '0.75rem', borderRadius: '0.75rem',
+                                                                border: '1px solid', borderColor: storyPrivacy === 'selected' ? '#4F46E5' : '#D1D5DB',
+                                                                background: storyPrivacy === 'selected' ? '#EEF2FF' : 'white',
+                                                                color: storyPrivacy === 'selected' ? '#4F46E5' : '#374151',
+                                                                fontWeight: 600, cursor: profileMode === 'edit' ? 'pointer' : 'default',
+                                                                opacity: profileMode === 'edit' ? 1 : 0.8
+                                                            }}
+                                                        >
+                                                            Selected Users
+                                                        </button>
+                                                    </div>
+
+                                                    {storyPrivacy === 'selected' && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                            <div style={{ fontSize: '0.9rem', fontWeight: 500, color: '#4B5563' }}>Selected Users:</div>
+                                                            <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', background: '#F9FAFB', borderRadius: '0.75rem', border: '1px solid #F3F4F6' }}>
+                                                                {users.filter(u => u._id !== user.id).map(u => (
+                                                                    <div
+                                                                        key={u._id}
+                                                                        onClick={() => {
+                                                                            if (profileMode === 'edit') {
+                                                                                setStoryAllowedUsers(prev =>
+                                                                                    prev.includes(u._id) ? prev.filter(id => id !== u._id) : [...prev, u._id]
+                                                                                );
+                                                                            }
+                                                                        }}
+                                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: profileMode === 'edit' ? 'pointer' : 'default' }}
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={storyAllowedUsers.includes(u._id)}
+                                                                            readOnly
+                                                                            style={{ cursor: profileMode === 'edit' ? 'pointer' : 'default', width: '16px', height: '16px' }}
+                                                                        />
+                                                                        <span style={{ fontSize: '0.95rem', color: '#1F2937' }}>{u.username}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div>
+                                                    <div style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>Online Status Privacy</div>
+                                                    <div style={{ fontSize: '0.85rem', color: '#6B7280', marginBottom: '1rem' }}>Control who can see your online status dot.</div>
+                                                    <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                                                        {['everyone', 'selected', 'nobody'].map(option => (
+                                                            <button
+                                                                key={option}
+                                                                onClick={() => profileMode === 'edit' && setStatusPrivacy(option)}
+                                                                style={{
+                                                                    flex: 1, padding: '0.75rem', borderRadius: '0.75rem',
+                                                                    border: '1px solid', borderColor: statusPrivacy === option ? '#4F46E5' : '#D1D5DB',
+                                                                    background: statusPrivacy === option ? '#EEF2FF' : 'white',
+                                                                    color: statusPrivacy === option ? '#4F46E5' : '#374151',
+                                                                    fontWeight: 600, cursor: profileMode === 'edit' ? 'pointer' : 'default',
+                                                                    opacity: profileMode === 'edit' ? 1 : 0.8,
+                                                                    textTransform: 'capitalize'
+                                                                }}
+                                                            >
+                                                                {option}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+
+                                                    {statusPrivacy === 'selected' && (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                                            <div style={{ fontSize: '0.9rem', fontWeight: 500, color: '#4B5563' }}>Allowed to see status:</div>
+                                                            <div style={{ maxHeight: '180px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.75rem', background: '#F9FAFB', borderRadius: '0.75rem', border: '1px solid #F3F4F6' }}>
+                                                                {users.filter(u => u._id !== user.id).map(u => (
+                                                                    <div
+                                                                        key={u._id}
+                                                                        onClick={() => {
+                                                                            if (profileMode === 'edit') {
+                                                                                setStatusAllowedUsers(prev =>
+                                                                                    prev.includes(u._id) ? prev.filter(id => id !== u._id) : [...prev, u._id]
+                                                                                );
+                                                                            }
+                                                                        }}
+                                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: profileMode === 'edit' ? 'pointer' : 'default' }}
+                                                                    >
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={statusAllowedUsers.includes(u._id)}
+                                                                            readOnly
+                                                                            style={{ cursor: profileMode === 'edit' ? 'pointer' : 'default', width: '16px', height: '16px' }}
+                                                                        />
+                                                                        <span style={{ fontSize: '0.95rem', color: '#1F2937' }}>{u.username}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div style={{ opacity: 0.5, pointerEvents: 'none' }}>
+                                                    <div style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>Two-Factor Authentication</div>
+                                                    <div style={{ fontSize: '0.85rem', color: '#6B7280' }}>Enhance your account security (Coming Soon).</div>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
-                                    <input
-                                        type="file"
-                                        ref={avatarInputRef}
-                                        style={{ display: 'none' }}
-                                        accept="image/*"
-                                        onChange={(e) => setEditAvatar(e.target.files[0])}
-                                    />
                                 </div>
 
-                                <div style={{ textAlign: 'center' }}>
-                                    <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1F2937' }}>{viewingUser.username}</div>
-                                    <div style={{ color: '#6B7280' }}>{viewingUser.email}</div>
+                                {/* Modal Actions */}
+                                <div style={{
+                                    padding: '1.5rem 2rem',
+                                    borderTop: '1px solid #F3F4F6',
+                                    display: 'flex',
+                                    justifyContent: 'flex-end',
+                                    gap: '1rem',
+                                    background: '#F9FAFB'
+                                }}>
+                                    {profileMode === 'view' ? (
+                                        <Button onClick={() => setProfileMode('edit')} style={{ minWidth: '120px' }}>
+                                            Edit Settings
+                                        </Button>
+                                    ) : (
+                                        <>
+                                            <Button $variant="secondary" onClick={() => {
+                                                setEditAbout(user.about || '');
+                                                setEditAvatar(null);
+                                                setStatusPrivacy(user.statusPrivacy || 'everyone');
+                                                setStatusAllowedUsers(user.statusAllowedUsers || []);
+                                                setProfileMode('view');
+                                            }} style={{ minWidth: '100px' }}>
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                onClick={async () => {
+                                                    try {
+                                                        setUploading(true);
+                                                        let avatarUrl = user.avatarUrl;
+
+                                                        if (editAvatar) {
+                                                            const formData = new FormData();
+                                                            formData.append('files', editAvatar);
+                                                            const { data } = await messageAPI.uploadFiles(formData);
+                                                            avatarUrl = data.files?.[0]?.url || data.imageUrl || data.urls?.[0]; // robust fallback
+                                                        }
+
+                                                        const response = await authAPI.updateProfile({
+                                                            about: editAbout,
+                                                            avatarUrl,
+                                                            storyPrivacy,
+                                                            storyAllowedUsers,
+                                                            statusPrivacy,
+                                                            statusAllowedUsers
+                                                        });
+                                                        const updatedUser = response.data.user;
+
+                                                        if (updateUser) {
+                                                            updateUser(updatedUser);
+                                                        } else {
+                                                            localStorage.setItem('user', JSON.stringify(updatedUser));
+                                                        }
+
+                                                        showAlert("Success", "Settings updated successfully!", "success");
+                                                        setProfileMode('view');
+                                                    } catch (e) {
+                                                        console.error(e);
+                                                        showAlert("Error", "Failed to update settings", "error");
+                                                    } finally {
+                                                        setUploading(false);
+                                                    }
+                                                }}
+                                                disabled={uploading}
+                                                style={{ minWidth: '140px' }}
+                                            >
+                                                {uploading ? "Saving..." : "Save Changes"}
+                                            </Button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
-
-                            <div>
-                                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>About</div>
-                                {profileMode === 'edit' ? (
-                                    <textarea
-                                        value={editAbout}
-                                        onChange={(e) => setEditAbout(e.target.value)}
-                                        rows={4}
-                                        style={{
-                                            width: '100%', padding: '0.75rem', borderRadius: '0.5rem', border: '1px solid #D1D5DB',
-                                            fontFamily: 'inherit', resize: 'none'
-                                        }}
-                                        placeholder="Write something about yourself..."
-                                    />
-                                ) : (
-                                    <div style={{
-                                        padding: '1rem', background: '#F9FAFB', borderRadius: '0.5rem', color: '#4B5563',
-                                        fontStyle: viewingUser.about ? 'normal' : 'italic', minHeight: '80px'
-                                    }}>
-                                        {viewingUser.about || "No about info set."}
-                                    </div>
-                                )}
-                            </div>
-
-
-
-                            {profileMode === 'edit' && (
-                                <div style={{ display: 'flex', gap: '1rem', marginTop: 'auto' }}>
-                                    <Button $variant="secondary" $fullWidth onClick={() => {
-                                        setEditAbout(user.about || '');
-                                        setEditAvatar(null);
-                                        setProfileMode('view');
-                                    }}>
-                                        Cancel
-                                    </Button>
-                                    <Button $fullWidth
-                                        onClick={async () => {
-                                            try {
-                                                setUploading(true);
-                                                let avatarUrl = user.avatarUrl;
-
-                                                if (editAvatar) {
-                                                    const formData = new FormData();
-                                                    formData.append('files', editAvatar);
-                                                    const { data } = await messageAPI.uploadFiles(formData);
-                                                    avatarUrl = data.files?.[0]?.url || data.imageUrl || data.urls?.[0]; // robust fallback
-                                                }
-
-                                                const response = await authAPI.updateProfile({
-                                                    about: editAbout,
-                                                    avatarUrl
-                                                });
-                                                const updatedUser = response.data.user;
-
-                                                // Update context and local storage so reload picks up new data
-                                                if (updateUser) {
-                                                    updateUser(updatedUser);
-                                                } else {
-                                                    // Fallback if updateUser not yet available in context (should be there though)
-                                                    localStorage.setItem('user', JSON.stringify(updatedUser));
-                                                }
-
-                                                // alert("Profile updated! Please refresh to see changes everywhere.");
-                                                window.location.reload(); // Auto-refresh to ensure context updates
-                                                // setShowProfileModal(false);
-                                            } catch (e) {
-                                                console.error(e);
-                                                alert("Failed to update profile");
-                                            } finally {
-                                                setUploading(false);
-                                            }
-                                        }}
-                                        disabled={uploading}
-                                    >
-                                        {uploading ? "Saving..." : "Save Changes"}
-                                    </Button>
-                                </div>
-                            )}
                         </div>
                     </div>
                 )
             }
 
-            {/* Story Viewer Overlay */}
+            {/* New Chat Modal */}
+            {showNewChatModal && (
+                <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1100,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }} onClick={() => setShowNewChatModal(false)}>
+                    <div style={{
+                        background: 'white', borderRadius: '1.5rem', width: '450px', maxWidth: '95%',
+                        maxHeight: '80vh', position: 'relative', display: 'flex', flexDirection: 'column',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)', overflow: 'hidden'
+                    }} onClick={e => e.stopPropagation()}>
+                        <div style={{ padding: '1.5rem', borderBottom: '1px solid #F3F4F6', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700 }}>New Message</h3>
+                            <button onClick={() => setShowNewChatModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6B7280' }}>
+                                <FiX size={24} />
+                            </button>
+                        </div>
+
+                        <div style={{ padding: '1rem', background: '#F9FAFB' }}>
+                            <SearchContainer style={{ marginBottom: 0 }}>
+                                <FiSearch size={18} />
+                                <Input
+                                    placeholder="Search users..."
+                                    autoFocus
+                                    value={userSearchQuery}
+                                    onChange={(e) => setUserSearchQuery(e.target.value)}
+                                />
+                            </SearchContainer>
+                        </div>
+
+                        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem' }}>
+                            {filteredUsers.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '2rem', color: '#6B7280' }}>No users found</div>
+                            ) : (
+                                filteredUsers.map(u => (
+                                    <div
+                                        key={u._id}
+                                        onClick={() => {
+                                            handleSelectUser(u);
+                                            setShowNewChatModal(false);
+                                        }}
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.75rem 1rem',
+                                            borderRadius: '0.75rem', cursor: 'pointer', transition: 'all 0.2s'
+                                        }}
+                                        onMouseOver={(e) => e.currentTarget.style.background = '#F3F4F6'}
+                                        onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                                    >
+                                        <Avatar size="sm">
+                                            {u.avatarUrl ? (
+                                                <img src={`${BACKEND_URL}${u.avatarUrl}`} alt={u.username} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                                            ) : (
+                                                u.username[0].toUpperCase()
+                                            )}
+                                        </Avatar>
+                                        <div>
+                                            <div style={{ fontWeight: 600, color: '#1F2937' }}>{u.username}</div>
+                                            <div style={{ fontSize: '0.8rem', color: '#6B7280' }}>{u.email}</div>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
             {
                 viewingStoryUser && viewingStoryUser.stories && viewingStoryUser.stories.length > 0 && (
                     <div style={{
-                        position: 'fixed', inset: 0, background: 'black', zIndex: 2000,
+                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.95)', zIndex: 2000,
                         display: 'flex', alignItems: 'center', justifyContent: 'center'
-                    }} onClick={() => setViewingStoryUser(null)}>
+                    }} onClick={() => { setViewingStoryUser(null); setShowViewersList(false); }}>
                         <div style={{
                             width: '100%', maxWidth: '400px', height: '90vh', position: 'relative',
                             display: 'flex', flexDirection: 'column',
-                            background: '#111'
+                            background: '#111', borderRadius: '1rem', overflow: 'hidden'
                         }} onClick={e => e.stopPropagation()}>
 
                             {/* Progress Bar */}
-                            <div style={{ display: 'flex', gap: '4px', padding: '10px', position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 }}>
+                            <div style={{ display: 'flex', gap: '4px', padding: '15px 10px', position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20 }}>
                                 {viewingStoryUser.stories.map((s, idx) => (
-                                    <div key={idx} style={{ flex: 1, height: '3px', background: idx === activeStoryIndex ? 'white' : 'rgba(255,255,255,0.3)', borderRadius: '2px' }}></div>
+                                    <div key={idx} style={{
+                                        flex: 1,
+                                        height: '3px',
+                                        background: idx === activeStoryIndex ? 'white' : idx < activeStoryIndex ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.3)',
+                                        borderRadius: '2px',
+                                        transition: 'background 0.3s'
+                                    }}></div>
                                 ))}
                             </div>
 
-                            {/* Navigation Areas */}
-                            <div style={{ position: 'absolute', top: 0, bottom: 0, left: 0, width: '30%', zIndex: 5 }} onClick={() => {
-                                if (activeStoryIndex > 0) setActiveStoryIndex(activeStoryIndex - 1);
-                            }}></div>
-                            <div style={{ position: 'absolute', top: 0, bottom: 0, right: 0, width: '30%', zIndex: 5 }} onClick={() => {
-                                if (activeStoryIndex < viewingStoryUser.stories.length - 1) {
-                                    setActiveStoryIndex(activeStoryIndex + 1);
-                                } else {
-                                    setViewingStoryUser(null); // Close on last story next
-                                }
-                            }}></div>
+                            {/* User Info & Close */}
+                            <div style={{ position: 'absolute', top: '25px', left: '15px', right: '15px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 20 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <Avatar size="sm" style={{ border: '1px solid white' }}>
+                                        {viewingStoryUser.user.avatarUrl ? (
+                                            <img src={`${BACKEND_URL}${viewingStoryUser.user.avatarUrl}`} style={{ width: '100%', height: '100%', borderRadius: '50%' }} />
+                                        ) : (
+                                            viewingStoryUser.user.username[0].toUpperCase()
+                                        )}
+                                    </Avatar>
+                                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                        <span style={{ color: 'white', fontWeight: 600, fontSize: '0.9rem' }}>{viewingStoryUser.user.username}</span>
+                                        <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem' }}>
+                                            {formatMessageTime(viewingStoryUser.stories[activeStoryIndex].createdAt)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {String(viewingStoryUser.user._id) === String(user.id) && (
+                                        <button
+                                            onClick={() => handleDeleteStory(viewingStoryUser.stories[activeStoryIndex]._id)}
+                                            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', padding: '5px' }}
+                                            title="Delete Story"
+                                        >
+                                            <FiTrash2 size={20} />
+                                        </button>
+                                    )}
+                                    <button onClick={() => setViewingStoryUser(null)} style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: '5px' }}>
+                                        <FiX size={24} />
+                                    </button>
+                                </div>
+                            </div>
 
-                            {/* Content */}
+                            {/* Navigation Buttons (Visible Arrows) */}
+                            <div
+                                style={{
+                                    position: 'absolute', top: '50%', left: '10px', transform: 'translateY(-50%)', zIndex: 30,
+                                    opacity: activeStoryIndex > 0 ? 1 : 0, transition: 'opacity 0.2s',
+                                    pointerEvents: activeStoryIndex > 0 ? 'auto' : 'none'
+                                }}
+                                onClick={() => setActiveStoryIndex(prev => Math.max(0, prev - 1))}
+                            >
+                                <button style={{ background: 'rgba(0,0,0,0.4)', border: 'none', color: 'white', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    ‹
+                                </button>
+                            </div>
+                            <div
+                                style={{
+                                    position: 'absolute', top: '50%', right: '10px', transform: 'translateY(-50%)', zIndex: 30,
+                                    opacity: activeStoryIndex < viewingStoryUser.stories.length - 1 ? 1 : 0.5, transition: 'opacity 0.2s'
+                                }}
+                                onClick={() => {
+                                    if (activeStoryIndex < viewingStoryUser.stories.length - 1) {
+                                        setActiveStoryIndex(prev => prev + 1);
+                                    } else {
+                                        setViewingStoryUser(null);
+                                    }
+                                }}
+                            >
+                                <button style={{ background: 'rgba(0,0,0,0.4)', border: 'none', color: 'white', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {activeStoryIndex < viewingStoryUser.stories.length - 1 ? '›' : <FiX size={16} />}
+                                </button>
+                            </div>
+
+                            {/* Main Content Area */}
                             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
                                 {(() => {
                                     const currentStory = viewingStoryUser.stories[activeStoryIndex];
                                     if (!currentStory) return null;
                                     return currentStory.mediaType === 'video' ? (
                                         <video
+                                            key={currentStory._id}
                                             src={`${BACKEND_URL}${currentStory.mediaUrl}`}
                                             autoPlay
-                                            style={{ maxWidth: '100%', maxHeight: '100%' }}
+                                            playsInline
+                                            style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                                         />
                                     ) : (
                                         <img
+                                            key={currentStory._id}
                                             src={`${BACKEND_URL}${currentStory.mediaUrl}`}
+                                            alt="story"
                                             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
                                         />
                                     );
                                 })()}
                             </div>
 
-                            {/* User Info */}
-                            <div style={{ position: 'absolute', top: '20px', left: '20px', display: 'flex', alignItems: 'center', gap: '10px', zIndex: 10 }}>
-                                <Avatar size="sm">{viewingStoryUser.user.avatarUrl ? <img src={`${BACKEND_URL}${viewingStoryUser.user.avatarUrl}`} style={{ width: '100%', height: '100%', borderRadius: '50%' }} /> : viewingStoryUser.user.username[0]}</Avatar>
-                                <span style={{ color: 'white', fontWeight: 600 }}>{viewingStoryUser.user.username}</span>
-                            </div>
+                            {/* Viewers Feature (at the bottom) */}
+                            {String(viewingStoryUser.user._id) === String(user.id) && (
+                                <div style={{
+                                    position: 'absolute', bottom: '0', left: '0', right: '0',
+                                    padding: '20px 15px', zIndex: 40,
+                                    background: 'linear-gradient(to top, rgba(0,0,0,0.8), transparent)'
+                                }}>
+                                    <div
+                                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', color: 'white' }}
+                                        onClick={() => setShowViewersList(!showViewersList)}
+                                    >
+                                        <FiEye size={18} />
+                                        <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>
+                                            {viewingStoryUser.stories[activeStoryIndex].views?.length || 0} Viewers
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Viewers List Overlay */}
+                            {showViewersList && (
+                                <div style={{
+                                    position: 'absolute', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.9)',
+                                    display: 'flex', flexDirection: 'column', padding: '20px'
+                                }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', color: 'white' }}>
+                                        <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Viewed by</h3>
+                                        <FiX size={20} cursor="pointer" onClick={() => setShowViewersList(false)} />
+                                    </div>
+                                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {viewingStoryUser.stories[activeStoryIndex].views?.length > 0 ? (
+                                            viewingStoryUser.stories[activeStoryIndex].views.map((v, i) => (
+                                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                    <Avatar size="sm">
+                                                        {v.user?.avatarUrl ? (
+                                                            <img src={`${BACKEND_URL}${v.user.avatarUrl}`} style={{ width: '100%', height: '100%', borderRadius: '50%' }} />
+                                                        ) : (
+                                                            v.user?.username?.[0]?.toUpperCase() || '?'
+                                                        )}
+                                                    </Avatar>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ color: 'white', fontSize: '0.9rem', fontWeight: 500 }}>{v.user?.username || 'Unknown User'}</div>
+                                                        <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.7rem' }}>
+                                                            {new Date(v.viewedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        ) : (
+                                            <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.5)', marginTop: '2rem' }}>
+                                                No views yet
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )
             }
+            {/* Story Privacy Selector Modal */}
+            {showStoryPrivacyModal && (
+                <Modal
+                    isOpen={showStoryPrivacyModal}
+                    onClose={() => setShowStoryPrivacyModal(false)}
+                    title="Story Privacy"
+                    width="500px"
+                    footer={
+                        <div style={{ display: 'flex', gap: '1rem', width: '100%' }}>
+                            <Button $variant="secondary" $fullWidth onClick={() => setShowStoryPrivacyModal(false)}>Cancel</Button>
+                            <Button $fullWidth onClick={confirmStoryUpload} disabled={uploading}>
+                                {uploading ? "Uploading..." : "Share Now"}
+                            </Button>
+                        </div>
+                    }
+                >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                        <div style={{ fontSize: '0.9rem', color: '#6B7280' }}>
+                            Configure privacy for each story. You can make some public and others private.
+                        </div>
+
+                        <div style={{ maxHeight: '350px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1rem', paddingRight: '0.5rem' }}>
+                            {storyUploadConfigs.map((config, index) => (
+                                <div key={config.id} style={{
+                                    padding: '1rem', background: '#F9FAFB', borderRadius: '1rem',
+                                    border: '1px solid #F3F4F6'
+                                }}>
+                                    <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+                                        <div style={{ width: '50px', height: '50px', borderRadius: '0.5rem', background: '#E5E7EB', overflow: 'hidden' }}>
+                                            {config.file.type.startsWith('image') ? (
+                                                <img src={URL.createObjectURL(config.file)} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            ) : (
+                                                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem' }}>🎥</div>
+                                            )}
+                                        </div>
+                                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                                            <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1F2937', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {config.file.name}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: '#6B7280' }}>
+                                                {(config.file.size / (1024 * 1024)).toFixed(2)} MB
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <button
+                                            onClick={() => {
+                                                const newConfigs = [...storyUploadConfigs];
+                                                newConfigs[index].privacy = 'everyone';
+                                                setStoryUploadConfigs(newConfigs);
+                                            }}
+                                            style={{
+                                                flex: 1, padding: '0.5rem', borderRadius: '0.5rem', fontSize: '0.8rem',
+                                                border: '1px solid', borderColor: config.privacy === 'everyone' ? '#4F46E5' : '#D1D5DB',
+                                                background: config.privacy === 'everyone' ? '#EEF2FF' : 'white',
+                                                color: config.privacy === 'everyone' ? '#4F46E5' : '#374151',
+                                                fontWeight: 600, cursor: 'pointer'
+                                            }}
+                                        >
+                                            Everyone
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const newConfigs = [...storyUploadConfigs];
+                                                newConfigs[index].privacy = 'selected';
+                                                setStoryUploadConfigs(newConfigs);
+                                            }}
+                                            style={{
+                                                flex: 1, padding: '0.5rem', borderRadius: '0.5rem', fontSize: '0.8rem',
+                                                border: '1px solid', borderColor: config.privacy === 'selected' ? '#4F46E5' : '#D1D5DB',
+                                                background: config.privacy === 'selected' ? '#EEF2FF' : 'white',
+                                                color: config.privacy === 'selected' ? '#4F46E5' : '#374151',
+                                                fontWeight: 600, cursor: 'pointer'
+                                            }}
+                                        >
+                                            Selected
+                                        </button>
+                                    </div>
+
+                                    {config.privacy === 'selected' && (
+                                        <div style={{ marginTop: '0.75rem' }}>
+                                            <div style={{ fontSize: '0.75rem', color: '#6B7280', marginBottom: '0.5rem' }}>Visible to:</div>
+                                            <div style={{ maxHeight: '100px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.4rem', padding: '0.5rem', background: 'white', borderRadius: '0.5rem', border: '1px solid #E5E7EB' }}>
+                                                {users.filter(u => u._id !== user.id).map(u => (
+                                                    <div
+                                                        key={u._id}
+                                                        onClick={() => {
+                                                            const newConfigs = [...storyUploadConfigs];
+                                                            const currentSelected = newConfigs[index].allowedUsers;
+                                                            newConfigs[index].allowedUsers = currentSelected.includes(u._id)
+                                                                ? currentSelected.filter(id => id !== u._id)
+                                                                : [...currentSelected, u._id];
+                                                            setStoryUploadConfigs(newConfigs);
+                                                        }}
+                                                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={config.allowedUsers.includes(u._id)}
+                                                            readOnly
+                                                            style={{ cursor: 'pointer', width: '14px', height: '14px' }}
+                                                        />
+                                                        <span style={{ fontSize: '0.8rem', color: '#374151' }}>{u.username}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            <AlertModal
+                isOpen={alertConfig.isOpen}
+                onClose={() => setAlertConfig(prev => ({ ...prev, isOpen: false }))}
+                title={alertConfig.title}
+                message={alertConfig.message}
+                type={alertConfig.type}
+            />
+            <ConfirmModal
+                isOpen={confirmConfig.isOpen}
+                onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+                title={confirmConfig.title}
+                message={confirmConfig.message}
+                onConfirm={confirmConfig.onConfirm}
+                type={confirmConfig.type}
+            />
         </ChatContainer >
     );
 };

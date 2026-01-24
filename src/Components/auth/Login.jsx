@@ -1,5 +1,5 @@
 import React, { useState, useContext } from 'react';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { useNavigate } from 'react-router-dom';
 import { AuthContext } from '../../context/AuthContext';
 import { FiMail, FiLock, FiEye, FiEyeOff } from 'react-icons/fi';
@@ -8,20 +8,71 @@ import { useForm } from '../../hooks/useForm';
 import { authValidation } from '../../utils/validation';
 import api, { authAPI } from '../../services/api';
 
-// Login page container with centered vertical layout
+const float = keyframes`
+  0% { transform: translate(0, 0) rotate(0deg); }
+  33% { transform: translate(30px, -50px) rotate(5deg); }
+  66% { transform: translate(-20px, 20px) rotate(-5deg); }
+  100% { transform: translate(0, 0) rotate(0deg); }
+`;
+
+const fadeIn = keyframes`
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+`;
+
+const StyledCard = styled(Card)`
+  animation: ${fadeIn} 0.6s ease-out;
+`;
+
+// New background element for blurred blobs
+const BackgroundBlobs = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: -1;
+  overflow: hidden;
+  background: ${({ theme }) => theme.colors.background};
+  
+  &::before, &::after {
+    content: '';
+    position: absolute;
+    width: 40vw;
+    height: 40vw;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.15;
+    animation: ${float} 20s infinite linear;
+  }
+  
+  &::before {
+    background: ${({ theme }) => theme.colors.primary[500]};
+    top: -10%;
+    left: -10%;
+  }
+  
+  &::after {
+    background: ${({ theme }) => theme.colors.secondary[500]};
+    bottom: -10%;
+    right: -10%;
+    animation-delay: -10s;
+  }
+`;
+
 const LoginContainer = styled.div`
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: ${({ theme }) => theme.colors.background};
   padding: ${({ theme }) => theme.spacing.lg};
+  position: relative;
 `;
 
 // Logo/Brand section
 const BrandSection = styled.div`
   text-align: center;
-  margin-bottom: ${({ theme }) => theme.spacing['2xl']};
+  margin-bottom: ${({ theme }) => theme.spacing.md};
 `;
 
 const Logo = styled.div`
@@ -47,9 +98,9 @@ const TabContainer = styled.div`
   display: flex;
   background: ${({ theme }) => theme.colors.background};
   border-radius: ${({ theme }) => theme.borderRadius.lg};
-  padding: 0.25rem;
-  margin-bottom: ${({ theme }) => theme.spacing.xl};
-  gap: 0.25rem;
+  padding: 0.2rem;
+  margin-bottom: ${({ theme }) => theme.spacing.md};
+  gap: 0.2rem;
 `;
 
 // Individual tab
@@ -82,13 +133,13 @@ const Tab = styled.button`
 const FormContainer = styled.div`
   display: flex;
   flex-direction: column;
-  gap: ${({ theme }) => theme.spacing.lg};
+  gap: ${({ theme }) => theme.spacing.md};
 `;
 
 // Welcome text
 const WelcomeText = styled.div`
   text-align: center;
-  margin-bottom: ${({ theme }) => theme.spacing.lg};
+  margin-bottom: ${({ theme }) => theme.spacing.md};
 `;
 
 const WelcomeTitle = styled.h2`
@@ -110,7 +161,7 @@ const WelcomeSubtitle = styled.p`
 // Form footer
 const FormFooter = styled.div`
   text-align: center;
-  margin-top: ${({ theme }) => theme.spacing.lg};
+  margin-top: ${({ theme }) => theme.spacing.md};
 `;
 
 const FooterText = styled.p`
@@ -179,7 +230,8 @@ const Login = ({ onToggleMode }) => {
   const { login } = useContext(AuthContext);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  
+  const [errorMessage, setErrorMessage] = useState('');
+
   const { values: formData, errors, touched, handleChange, handleBlur, validateForm } = useForm({
     email: '',
     password: ''
@@ -187,28 +239,29 @@ const Login = ({ onToggleMode }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     console.log('Form data:', formData);
     console.log('Errors:', errors);
-    
+
     // Trigger validation on all fields
     const isValid = validateForm();
     console.log('Is valid:', isValid);
-    
+
     if (!isValid) {
       console.log('Validation failed, form not submitted');
       return;
     }
-    
+
     setIsLoading(true);
-    
+    setErrorMessage('');
+
     try {
       const response = await authAPI.login(formData);
       login(response.data.user, response.data.token);
       navigate('/chat');
     } catch (error) {
       console.error('Login error:', error);
-      // Handle error display
+      setErrorMessage(error.response?.data?.message || error.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
     }
@@ -216,7 +269,8 @@ const Login = ({ onToggleMode }) => {
 
   return (
     <LoginContainer>
-      <Card padding="lg">
+      <BackgroundBlobs />
+      <StyledCard variant="glass" padding="md" style={{ maxWidth: '380px', width: '100%' }}>
         <CardContent>
           <BrandSection>
             <Logo>ChatFlow</Logo>
@@ -234,6 +288,21 @@ const Login = ({ onToggleMode }) => {
               Enter your credentials to access your account
             </WelcomeSubtitle>
           </WelcomeText>
+
+          {errorMessage && (
+            <div style={{
+              padding: '0.75rem',
+              background: '#FEE2E2',
+              color: '#B91C1C',
+              borderRadius: '0.5rem',
+              marginBottom: '1rem',
+              fontSize: '0.875rem',
+              textAlign: 'center',
+              border: '1px solid #FECACA'
+            }}>
+              {errorMessage}
+            </div>
+          )}
 
           <form onSubmit={handleSubmit}>
             <FormContainer>
@@ -286,7 +355,7 @@ const Login = ({ onToggleMode }) => {
             </FooterText>
           </FormFooter>
         </CardContent>
-      </Card>
+      </StyledCard>
     </LoginContainer>
   );
 };

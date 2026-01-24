@@ -21,6 +21,8 @@ export const ChatArea = styled.div`
   flex-direction: column;
   background: ${({ theme }) => theme.colors.background};
   position: relative;
-  overflow: hidden;
+  overflow-y: auto;
+  padding-bottom: 1rem;
+  scroll-behavior: smooth;
   width: 100%;
 `;
