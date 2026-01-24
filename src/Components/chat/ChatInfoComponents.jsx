@@ -7,15 +7,17 @@ export const ChatInfo = styled.div`
 export const ChatName = styled.div`
   font-weight: ${({ theme }) => theme.typography.fontWeight[600]};
   color: ${({ theme }) => theme.colors.text.primary};
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.15rem;
+  font-size: 0.95rem;
 `;
 
 export const ChatMessage = styled.div`
-  font-size: ${({ theme }) => theme.typography.fontSize.sm};
+  font-size: 0.825rem;
   color: ${({ theme }) => theme.colors.text.secondary};
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 180px;
 `;
 
 export const ChatMeta = styled.div`

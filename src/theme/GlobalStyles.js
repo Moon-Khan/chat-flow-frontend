@@ -121,6 +121,17 @@ const GlobalStyles = createGlobalStyle`
   ::-webkit-scrollbar-thumb:hover {
     background: ${({ theme }) => theme.colors.text.secondary};
   }
+
+  /* Responsive Utilities */
+  .mobile-back-button {
+    display: none !important;
+  }
+
+  @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
+    .mobile-back-button {
+      display: flex !important;
+    }
+  }
 `;
 
 export default GlobalStyles;

@@ -3,30 +3,30 @@ export const theme = {
   // Brand Colors
   colors: {
     primary: {
-      50: '#F8F7FC',
-      100: '#F3F0FF',
-      200: '#E5E7EB',
-      500: '#7C3AED',
-      600: '#6a2cd9',
-      700: '#5B21B6',
+      50: '#F5F3FF',
+      100: '#EDE9FE',
+      200: '#DDD6FE',
+      500: '#6366F1', // Indigo primary
+      600: '#4F46E5',
+      700: '#4338CA',
     },
     secondary: {
-      50: '#9F67FF',
-      100: '#9F67FF',
-      500: '#9F67FF',
-      600: '#6D28D9',
-      700: '#5B21B6',
+      50: '#FDF2F8',
+      100: '#FCE7F3',
+      500: '#EC4899', // Pink secondary
+      600: '#DB2777',
+      700: '#BE185D',
     },
-    background: '#F8F7FC',
+    background: '#F9FAFB',
     surface: '#FFFFFF',
     text: {
       primary: '#111827',
-      secondary: '#6B7280',
+      secondary: '#4B5563',
       tertiary: '#9CA3AF',
     },
     gradients: {
-      primary: 'linear-gradient(135deg, #9F67FF, #7C3AED)',
-      background: 'linear-gradient(135deg, #F8F7FC 0%, #F3F0FF 100%)',
+      primary: 'linear-gradient(135deg, #6366F1 0%, #A855F7 100%)',
+      background: 'linear-gradient(135deg, #F9FAFB 0%, #F3F4F6 100%)',
     },
     border: '#E5E7EB',
     error: {
