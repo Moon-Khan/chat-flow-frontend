@@ -6,9 +6,6 @@ import {
     ChatContainer,
     Sidebar,
     SidebarHeader,
-    UserSection,
-    TabsContainer,
-    Tab,
     ChatList,
     ChatItem,
     ChatAvatar,
@@ -20,14 +17,15 @@ import {
     ChatTime,
     ChatHeader,
     ChatArea,
+    NavSidebar,
     EmptyState,
     EmptyStateIcon,
     EmptyStateText,
     EmptyStateSubtext,
-} from '../../components/Chat';
+} from '../../Components/chat';
 import { Avatar, Input, Button } from '../../Components/ui';
 import { useRef } from 'react';
-import { FiSearch, FiMessageSquare, FiUsers, FiSend, FiLogOut, FiPaperclip, FiCamera, FiX, FiTrash2, FiMoreVertical, FiDisc, FiPlus, FiEye, FiSettings } from 'react-icons/fi';
+import { FiSearch, FiMessageSquare, FiUsers, FiSend, FiLogOut, FiPaperclip, FiCamera, FiX, FiTrash2, FiMoreVertical, FiDisc, FiPlus, FiEye, FiSettings, FiGrid, FiLayers } from 'react-icons/fi';
 import styled from 'styled-components';
 
 // -----------------------------------------------------------------
@@ -241,6 +239,7 @@ const ChatPage = () => {
     const [viewingUser, setViewingUser] = useState(null);
     const [editAbout, setEditAbout] = useState('');
     const [editAvatar, setEditAvatar] = useState(null);
+    const [showMobileChat, setShowMobileChat] = useState(false);
     const avatarInputRef = useRef(null);
 
     const fileInputRef = useRef(null);
@@ -296,7 +295,6 @@ const ChatPage = () => {
     useEffect(() => {
         fetchUsers();
         fetchConversations();
-        console.log("Casing check: components/chat vs components/Chat");
     }, []);
 
     // -----------------------------------------------------------------
@@ -351,12 +349,14 @@ const ChatPage = () => {
     const handleSelectUser = async (selectedUser) => {
         setActiveChat({ ...selectedUser, type: 'private' });
         setShowGroupInfo(false);
+        setShowMobileChat(true);
         await fetchMessages(selectedUser);
     };
 
     const handleSelectConversation = async (conv) => {
         setActiveChat(conv);
         setShowGroupInfo(false);
+        setShowMobileChat(true);
         if (conv.type === 'group') {
             await fetchMessages(conv);
         } else {
@@ -586,10 +586,15 @@ const ChatPage = () => {
     // -----------------------------------------------------------------
     // Filtering
     // -----------------------------------------------------------------
+    // Filtering
+    // -----------------------------------------------------------------
     const filteredConversations = conversations.filter(c => {
-        const name = c.type === 'group' ? c.name : c.user?.username;
+        if (activeTab === 'chats' && (c.type === 'group' || c.isGroup)) return false;
+        if (activeTab === 'groups' && c.type !== 'group' && !c.isGroup) return false;
+        const name = (c.type === 'group' || c.isGroup) ? c.name : c.user?.username;
         return name?.toLowerCase().includes(searchQuery.toLowerCase());
     });
+
 
     const filteredUsers = users.filter(u =>
         u.username.toLowerCase().includes(searchQuery.toLowerCase())
@@ -599,68 +604,39 @@ const ChatPage = () => {
 
     return (
         <ChatContainer>
-            {/* Sidebar */}
-            <Sidebar>
+            <NavSidebar
+                $showMobile={!showMobileChat}
+                activeTab={activeTab}
+                onTabChange={(tab) => { setActiveTab(tab); setIsCreatingGroup(false); }}
+                user={user}
+                logout={logout}
+                onProfileClick={() => {
+                    setViewingUser(user);
+                    setProfileMode('edit');
+                    setEditAbout(user.about || '');
+                    setShowProfileModal(true);
+                }}
+            />
+
+            {/* Sidebar (List Pane) */}
+            <Sidebar $showMobileChat={!showMobileChat || !activeChat}>
                 <SidebarHeader>
-
-                    <UserSection>
-                        <div
-                            style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1, cursor: 'pointer' }}
-                            onClick={() => {
-                                setViewingUser(user);
-                                setProfileMode('edit');
-                                setEditAbout(user.about || '');
-                                setShowProfileModal(true);
-                            }}
-                        >
-                            <Avatar>
-                                {user?.avatarUrl ? (
-                                    <img
-                                        src={`${BACKEND_URL}${user.avatarUrl}`}
-                                        alt="me"
-                                        style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
-                                    />
-                                ) : (
-                                    user?.username?.[0]?.toUpperCase() || 'U'
-                                )}
-                            </Avatar>
-                            <UserInfo>
-                                <UserName>{user?.username || 'User'}</UserName>
-                                <UserStatus>🟢 Online</UserStatus>
-                            </UserInfo>
-                        </div>
-                        <Button
-                            $variant="ghost"
-                            $size="sm"
-                            onClick={logout}
-                            title="Logout"
-                            style={{ padding: '8px', minWidth: 'auto' }}
-                        >
-                            <FiLogOut size={18} />
-                        </Button>
-                    </UserSection>
-
-                    <TabsContainer>
-                        <Tab $active={activeTab === 'chats'} onClick={() => setActiveTab('chats')}>
-                            <FiMessageSquare size={16} style={{ marginRight: '0.5rem' }} />
-                            Chats
-                        </Tab>
-                        <Tab $active={activeTab === 'users'} onClick={() => { setActiveTab('users'); setIsCreatingGroup(false); }}>
-                            <FiUsers size={16} style={{ marginRight: '0.5rem' }} />
-                            Users
-                        </Tab>
-                    </TabsContainer>
+                    <div style={{ marginBottom: '1.5rem' }}>
+                        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0 }}>
+                            {activeTab === 'chats' ? 'Messages' : activeTab === 'groups' ? 'Groups' : 'Stories'}
+                        </h2>
+                    </div>
 
                     <SearchContainer>
                         <FiSearch size={18} />
                         <Input
-                            placeholder={`Search ${activeTab === 'chats' ? 'chats' : 'users'}...`}
+                            placeholder={`Search ${activeTab === 'chats' ? 'chats' : activeTab === 'groups' ? 'groups' : 'stories'}...`}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </SearchContainer>
 
-                    {activeTab === 'chats' && !isCreatingGroup && (
+                    {activeTab === 'groups' && !isCreatingGroup && (
                         <Button $fullWidth $variant="secondary" onClick={() => setIsCreatingGroup(true)} style={{ marginBottom: '1rem' }}>
                             <FiUsers size={16} style={{ marginRight: '0.5rem' }} />
                             New Group
@@ -737,9 +713,9 @@ const ChatPage = () => {
                             </div>
                         </div>
                     ) : (
-                        activeTab === 'chats' ? (
+                        (activeTab === 'chats' || activeTab === 'groups') ? (
                             filteredConversations.map((chat, idx) => {
-                                const isGroup = chat.type === 'group';
+                                const isGroup = chat.type === 'group' || chat.isGroup;
                                 const displayName = isGroup ? chat.name : chat.user.username;
                                 const displayId = isGroup ? chat._id : chat.user._id;
                                 const avatarUrl = isGroup ? chat.avatarUrl : chat.user.avatarUrl;
@@ -775,34 +751,30 @@ const ChatPage = () => {
                                     </ChatItem>
                                 );
                             })
-                        ) : (
-                            filteredUsers.map((u) => (
-                                <ChatItem key={u._id} onClick={() => handleSelectUser(u)} $active={activeChat?._id === u._id}>
-                                    <ChatAvatar>
-                                        {u.avatarUrl ? (
-                                            <img
-                                                src={`${BACKEND_URL}${u.avatarUrl}`}
-                                                alt={u.username}
-                                                style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
-                                            />
-                                        ) : (
-                                            u.username[0].toUpperCase()
-                                        )}
-                                        <StatusIndicator $online={onlineUsers?.has(u._id)} />
-                                    </ChatAvatar>
-                                    <ChatInfo>
-                                        <ChatName>{u.username}</ChatName>
-                                        <ChatMessage>{u.email}</ChatMessage>
-                                    </ChatInfo>
-                                </ChatItem>
-                            ))
-                        )
+                        ) : activeTab === 'stories' ? (
+                            <div style={{ padding: '1rem', textAlign: 'center', color: '#6B7280' }}>
+                                <div style={{ marginBottom: '1rem', border: '1px dashed #ccc', borderRadius: '1rem', padding: '2rem' }}>
+                                    <FiPlus size={32} />
+                                    <div style={{ marginTop: '0.5rem' }}>Add to Story</div>
+                                </div>
+                                <div>No stories available yet.</div>
+                            </div>
+                        ) : null
                     )}</ChatList>
 
             </Sidebar >
 
             {/* Main Content */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+            <div style={{
+                flex: 1,
+                display: showMobileChat || !activeChat ? 'flex' : 'none',
+                flexDirection: 'column',
+                height: '100%',
+                position: 'relative',
+                zIndex: 5,
+                width: '100%',
+                background: '#F9FAFB'
+            }}>
                 {
                     activeChat ? (
                         <>
@@ -820,6 +792,18 @@ const ChatPage = () => {
                                 }}
                             >
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                                    <Button
+                                        $variant="ghost"
+                                        onClick={() => setShowMobileChat(false)}
+                                        style={{
+                                            padding: '8px',
+                                            minWidth: 'auto',
+                                            display: 'none',
+                                        }}
+                                        className="mobile-back-button"
+                                    >
+                                        <FiX size={24} />
+                                    </Button>
                                     <Avatar>
                                         {((activeChat.avatarUrl || activeChat.user?.avatarUrl)) ? (
                                             <img
@@ -834,7 +818,7 @@ const ChatPage = () => {
                                     <div>
                                         <div style={{ fontWeight: 600, fontSize: '1.1rem' }}>{activeChat.name || activeChat.username || activeChat.user?.username}</div>
                                         <div style={{ fontSize: '0.85rem', color: (activeChat.type === 'group' || activeChat.isGroup) ? '#6B7280' : (onlineUsers?.has(activeChat._id || activeChat.user?._id) ? '#10B981' : '#6B7280') }}>
-                                            {(activeChat.type === 'group' || activeChat.isGroup) ? `${activeChat.participants?.length || 0} members - Click for info` : (onlineUsers?.has(activeChat._id || activeChat.user?._id) ? 'Online' : 'Offline')}
+                                            {(activeChat.type === 'group' || activeChat.isGroup) ? `${activeChat.participants?.length || 0} members` : (onlineUsers?.has(activeChat._id || activeChat.user?._id) ? 'Online' : 'Offline')}
                                         </div>
                                     </div>
                                 </div>
