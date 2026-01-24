@@ -18,14 +18,47 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Handle standardized API response format
+api.interceptors.response.use(
+  (response) => {
+    // If the response follows the standardized format, return the 'data' field
+    if (response.data && response.data.status === true) {
+      // Replace response.data with the actual payload for easier consumption
+      return {
+        ...response,
+        data: response.data.data
+      };
+    }
+    return response;
+  },
+  (error) => {
+    // If the error response follows the standardized format, extract the message
+    if (error.response && error.response.data && error.response.data.message) {
+      error.message = error.response.data.message;
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const authAPI = {
   register: (userData) => api.post('/api/users/register', userData),
   login: (credentials) => api.post('/api/users/login', credentials),
   getAllUsers: () => api.get('/api/users/'),
+  updateProfile: (data) => api.put('/api/users/profile', data),
 };
 
 export const messageAPI = {
   getPrivateMessages: (userId) => api.get(`/api/messages/private/${userId}`),
+  getChatMessages: (chatId) => api.get(`/api/messages/chat/${chatId}`),
+  getConversations: () => api.get('/api/messages/conversations'),
+  createGroup: (groupData) => api.post('/api/messages/groups', groupData),
+  leaveGroup: (chatId) => api.post(`/api/messages/groups/${chatId}/leave`),
+  uploadFiles: (formData) => api.post('/api/messages/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  deleteMessage: (messageId, option) => api.post(`/api/messages/${messageId}/delete`, { option }),
 };
+
+
 
 export default api;

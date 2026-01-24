@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from 'styled-components';
-import { Login, Signup } from './Components/auth';
-import Chat from './pages/Chat';
+import { Login, Signup } from './components/auth';
+import Chat from './pages/Chat/ChatPage';
 import { AuthProvider, AuthContext } from './context/AuthContext';
-import theme from './theme/theme';
+import { SocketProvider } from './context/SocketContext';
+import { theme } from './theme';
 import GlobalStyles from './theme/GlobalStyles';
 
 // Protected Route Component
@@ -33,19 +34,21 @@ function App() {
     <ThemeProvider theme={theme}>
       <GlobalStyles />
       <AuthProvider>
-        <Router>
-          <Routes>
-            <Route path="/login" element={<AuthLayout />} />
-            <Route path="/signup" element={<AuthLayout />} />
-            <Route path="/chat" element={
-              <ProtectedRoute>
-                <Chat />
-              </ProtectedRoute>
-            } />
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </Router>
+        <SocketProvider>
+          <Router>
+            <Routes>
+              <Route path="/login" element={<AuthLayout />} />
+              <Route path="/signup" element={<AuthLayout />} />
+              <Route path="/chat" element={
+                <ProtectedRoute>
+                  <Chat />
+                </ProtectedRoute>
+              } />
+              <Route path="/" element={<Navigate to="/login" replace />} />
+              <Route path="*" element={<Navigate to="/login" replace />} />
+            </Routes>
+          </Router>
+        </SocketProvider>
       </AuthProvider>
     </ThemeProvider>
   );
