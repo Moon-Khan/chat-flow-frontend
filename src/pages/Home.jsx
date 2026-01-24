@@ -122,7 +122,7 @@ const Home = () => {
         <WelcomeCard>
           <WelcomeTitle>Welcome to ChatFlow! 🎉</WelcomeTitle>
           <WelcomeMessage>
-            You're successfully logged in. Start chatting with friends, join rooms, 
+            You're successfully logged in. Start chatting with friends, join rooms,
             and explore all the amazing features we have to offer.
           </WelcomeMessage>
 
