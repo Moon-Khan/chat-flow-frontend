@@ -8,6 +8,7 @@ export const Sidebar = styled.div`
   flex-direction: column;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   height: 100%;
+  overflow: hidden;
 
   @media (max-width: ${({ theme }) => theme.breakpoints.md}) {
     width: 100%;

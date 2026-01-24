@@ -3,15 +3,22 @@ import styled from 'styled-components';
 
 // Card container with exact design specifications
 const StyledCard = styled.div`
-  background: ${({ theme }) => theme.colors.surface};
+  background: ${({ theme, $variant }) =>
+    $variant === 'glass' ? 'rgba(255, 255, 255, 0.7)' : theme.colors.surface};
+  backdrop-filter: ${({ $variant }) =>
+    $variant === 'glass' ? 'blur(10px)' : 'none'};
+  border: ${({ theme, $variant }) =>
+    $variant === 'glass' ? '1px solid rgba(255, 255, 255, 0.3)' : 'none'};
   border-radius: ${({ theme }) => theme.borderRadius.xl}; // rounded-2xl
-  box-shadow: ${({ theme }) => theme.shadows.soft}; // Exact specification
+  box-shadow: ${({ theme, $variant }) =>
+    $variant === 'glass' ? '0 8px 32px 0 rgba(31, 38, 135, 0.1)' : theme.shadows.soft};
   overflow: hidden;
   transition: all ${({ theme }) => theme.transitions.normal};
   
   &:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+    box-shadow: ${({ $variant }) =>
+    $variant === 'glass' ? '0 8px 32px 0 rgba(31, 38, 135, 0.15)' : '0 8px 30px rgba(0, 0, 0, 0.12)'};
   }
 `;
 

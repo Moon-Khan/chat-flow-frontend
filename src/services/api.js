@@ -59,6 +59,15 @@ export const messageAPI = {
   deleteMessage: (messageId, option) => api.post(`/api/messages/${messageId}/delete`, { option }),
 };
 
+export const storyAPI = {
+  getStories: () => api.get('/api/stories'),
+  uploadStory: (formData) => api.post('/api/stories', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }),
+  viewStory: (storyId) => api.post(`/api/stories/${storyId}/view`),
+  deleteStory: (storyId) => api.delete(`/api/stories/${storyId}`),
+};
+
 
 
 export default api;
