@@ -43,8 +43,11 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (userData) => api.post('/api/users/register', userData),
   login: (credentials) => api.post('/api/users/login', credentials),
+  verifyEmail: (data) => api.post('/api/users/verify-email', data),
+  resendCode: (email) => api.post('/api/users/resend-code', { email }),
   getAllUsers: () => api.get('/api/users/'),
   updateProfile: (data) => api.put('/api/users/profile', data),
+  deleteAccount: () => api.delete('/api/users/delete-account'),
 };
 
 export const messageAPI = {
