@@ -750,6 +750,24 @@ const ChatPage = () => {
         );
     };
 
+    const handleDeleteAccount = async () => {
+        showConfirm(
+            "Delete Account",
+            "Are you absolutely sure? This will permanently delete your account and all your messages. This action cannot be undone.",
+            async () => {
+                try {
+                    await authAPI.deleteAccount();
+                    logout();
+                    navigate('/login');
+                    showAlert("Account Deleted", "Your account has been successfully deleted.", "success");
+                } catch (err) {
+                    console.error("Failed to delete account", err);
+                    showAlert("Error", "Failed to delete account", "error");
+                }
+            }
+        );
+    };
+
     // -----------------------------------------------------------------
     // Filtering
     // -----------------------------------------------------------------
@@ -1820,6 +1838,20 @@ const ChatPage = () => {
                                                     <div style={{ fontSize: '1rem', fontWeight: 600, color: '#374151', marginBottom: '0.5rem' }}>Two-Factor Authentication</div>
                                                     <div style={{ fontSize: '0.85rem', color: '#6B7280' }}>Enhance your account security (Coming Soon).</div>
                                                 </div>
+
+                                                {profileMode === 'edit' && (
+                                                    <div style={{ marginTop: '1rem', paddingTop: '1.5rem', borderTop: '1px solid #F3F4F6' }}>
+                                                        <div style={{ fontSize: '1rem', fontWeight: 600, color: '#EF4444', marginBottom: '0.5rem' }}>Danger Zone</div>
+                                                        <div style={{ fontSize: '0.85rem', color: '#6B7280', marginBottom: '1rem' }}>Deleting your account is permanent and cannot be undone.</div>
+                                                        <Button
+                                                            $variant="danger"
+                                                            $fullWidth
+                                                            onClick={handleDeleteAccount}
+                                                        >
+                                                            Delete My Account
+                                                        </Button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}

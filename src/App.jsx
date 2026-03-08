@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from 'styled-components';
-import { Login, Signup } from './Components/auth';
+import { Login, Signup, VerifyEmail } from './Components/auth';
 import Chat from './pages/Chat/ChatPage';
 import { AuthProvider, AuthContext } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
@@ -39,6 +39,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<AuthLayout />} />
               <Route path="/signup" element={<AuthLayout />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
               <Route path="/chat" element={
                 <ProtectedRoute>
                   <Chat />

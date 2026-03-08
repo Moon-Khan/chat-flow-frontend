@@ -386,8 +386,8 @@ const Signup = ({ onToggleMode }) => {
         email: formData.email,
         password: formData.password
       });
-      login(response.data.user, response.data.token);
-      navigate('/chat');
+      // Redirect to verification instead of logging in
+      navigate('/verify-email', { state: { email: formData.email } });
     } catch (error) {
       console.error('Signup error:', error);
       setErrorMessage(error.response?.data?.message || error.message || 'Signup failed. Please try again.');

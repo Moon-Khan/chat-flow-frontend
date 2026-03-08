@@ -261,6 +261,10 @@ const Login = ({ onToggleMode }) => {
       navigate('/chat');
     } catch (error) {
       console.error('Login error:', error);
+      if (error.response?.data?.notVerified) {
+        navigate('/verify-email', { state: { email: formData.email } });
+        return;
+      }
       setErrorMessage(error.response?.data?.message || error.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsLoading(false);
