@@ -21,7 +21,7 @@ const VerifyContainer = styled.div`
 
 const StyledCard = styled(Card)`
   animation: ${fadeIn} 0.6s ease-out;
-  max-width: 400px;
+  max-width: 420px;
   width: 100%;
 `;
 
@@ -47,21 +47,25 @@ const Title = styled.h2`
 const Description = styled.p`
   text-align: center;
   color: ${({ theme }) => theme.colors.text.secondary};
-  margin-bottom: ${({ theme }) => theme.spacing.xl};
+  max-width: 340px;
+  margin: 0 auto ${({ theme }) => theme.spacing.xl};
 `;
 
 const OtpContainer = styled.div`
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   gap: 10px;
-  margin-bottom: ${({ theme }) => theme.spacing.xl};
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto ${({ theme }) => theme.spacing.xl};
 `;
 
 const OtpInput = styled.input`
-  width: 50px;
-  height: 60px;
+  width: 46px;
+  height: 54px;
+  flex: 0 0 46px;
   text-align: center;
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   font-weight: 700;
   border: 2px solid ${({ theme, error }) => error ? theme.colors.error[500] : theme.colors.border};
   border-radius: ${({ theme }) => theme.borderRadius.md};
@@ -73,6 +77,13 @@ const OtpInput = styled.input`
     outline: none;
     border-color: ${({ theme }) => theme.colors.primary[500]};
     box-shadow: 0 0 0 3px ${({ theme }) => theme.colors.primary[100]};
+  }
+
+  @media (max-width: 480px) {
+    width: 40px;
+    height: 48px;
+    flex-basis: 40px;
+    font-size: 1.15rem;
   }
 `;
 
