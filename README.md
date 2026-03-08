@@ -1,16 +1,66 @@
-# React + Vite
+# Chat Flow Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + Vite frontend for the Chat Flow app (authentication, chat, stories, and real-time updates via Socket.IO).
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- React 19
+- Vite
+- React Router
+- Axios
+- Socket.IO Client
+- Styled Components
+- Framer Motion
 
-## React Compiler
+## Prerequisites
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Node.js 18+ (recommended)
+- npm
+- Running backend server
 
-## Expanding the ESLint configuration
+## Setup
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create `.env` in the frontend root:
+
+```env
+VITE_BACKEND_URL=http://localhost:5000
+```
+
+3. Start development server:
+
+```bash
+npm run dev
+```
+
+App runs on the Vite default URL (usually `http://localhost:5173`).
+
+## Available Scripts
+
+- `npm run dev` - Start Vite dev server
+- `npm run build` - Build production bundle
+- `npm run preview` - Preview production build locally
+- `npm run lint` - Run ESLint
+
+## Project Structure
+
+```text
+src/
+  Components/      # Auth, chat, and UI components
+  context/         # Auth and socket providers
+  pages/           # Page-level screens (Chat, Home)
+  services/        # API + socket setup
+  theme/           # Global styles and theme tokens
+  utils/           # Validation/helpers
+```
+
+## API and Socket Configuration
+
+- REST API base URL is configured in `src/services/api.js`.
+- Socket connection URL is configured in `src/services/socket.js`.
+- Both use `VITE_BACKEND_URL` and fallback to `http://localhost:5000`.
