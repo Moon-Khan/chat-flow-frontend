@@ -3,6 +3,7 @@ import styled from 'styled-components';
 export const ChatItem = styled.div`
   display: flex;
   align-items: center;
+  width: 100%;
   gap: ${({ theme }) => theme.spacing.md};
   padding: ${({ theme }) => theme.spacing.md};
   border-radius: ${({ theme }) => theme.borderRadius.lg};

@@ -645,6 +645,7 @@ const ChatPage = () => {
                 // Notify via socket so others see it immediately
                 socket.emit('delete_message', { messageId, option });
             }
+            fetchConversations();
             setActiveMessageOptions(null);
         } catch (err) {
             console.error("Failed to delete message", err);
