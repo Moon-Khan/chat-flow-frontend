@@ -153,6 +153,60 @@ const DropdownItem = styled.div`
   }
 `;
 
+const ConversationActions = styled.div`
+  position: relative;
+  display: flex;
+  align-items: center;
+`;
+
+const ConversationMenuButton = styled.button`
+  border: none;
+  background: transparent;
+  color: ${({ theme }) => theme.colors.text.tertiary};
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  &:hover {
+    background: ${({ theme }) => theme.colors.background};
+    color: ${({ theme }) => theme.colors.text.primary};
+  }
+`;
+
+const ConversationMenu = styled.div`
+  position: absolute;
+  top: 110%;
+  right: 0;
+  min-width: 165px;
+  background: #fff;
+  border: 1px solid ${({ theme }) => theme.colors.border};
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  z-index: 120;
+`;
+
+const ConversationMenuItem = styled.button`
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0.65rem 0.8rem;
+  font-size: 0.85rem;
+  color: ${({ $danger }) => ($danger ? '#EF4444' : '#374151')};
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+
+  &:hover {
+    background: #F9FAFB;
+  }
+`;
+
 const UserStatus = styled.div`
   font-size: ${({ theme }) => theme.typography.fontSize.sm};
   color: ${({ theme }) => theme.colors.text.secondary};
@@ -252,6 +306,7 @@ const ChatPage = () => {
     const [statusPrivacy, setStatusPrivacy] = useState(user?.statusPrivacy || 'everyone');
     const [statusAllowedUsers, setStatusAllowedUsers] = useState(user?.statusAllowedUsers || []);
     const [showNewChatModal, setShowNewChatModal] = useState(false);
+    const [activeConversationMenu, setActiveConversationMenu] = useState(null);
     const [userSearchQuery, setUserSearchQuery] = useState('');
     const [alertConfig, setAlertConfig] = useState({ isOpen: false, title: '', message: '', type: 'info' });
     const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', onConfirm: () => { }, type: 'danger' });
@@ -288,6 +343,7 @@ const ChatPage = () => {
             const { data } = await messageAPI.getConversations();
             // Sort conversations by latest message date
             const sortedConversations = [...data].sort((a, b) => {
+                if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
                 const dateA = a.lastMessage?.createdAt ? new Date(a.lastMessage.createdAt) : new Date(a.createdAt || 0);
                 const dateB = b.lastMessage?.createdAt ? new Date(b.lastMessage.createdAt) : new Date(b.createdAt || 0);
                 return dateB - dateA;
@@ -472,6 +528,52 @@ const ChatPage = () => {
                     fetchConversations();
                 } catch (e) {
                     console.error('Failed to leave group', e);
+                }
+            }
+        );
+    };
+
+    const handleToggleConversationPin = async (chat) => {
+        const isGroup = chat.type === 'group' || chat.isGroup;
+        const type = isGroup ? 'group' : 'private';
+        const targetId = isGroup ? chat._id : chat.user._id;
+
+        try {
+            await messageAPI.setConversationPin(type, targetId, !chat.isPinned);
+            await fetchConversations();
+        } catch (err) {
+            console.error('Failed to update conversation pin state', err);
+            showAlert('Error', err.message || 'Failed to update pin state', 'error');
+        }
+    };
+
+    const handleDeleteConversation = async (chat) => {
+        const isGroup = chat.type === 'group' || chat.isGroup;
+        const type = isGroup ? 'group' : 'private';
+        const targetId = isGroup ? chat._id : chat.user._id;
+        const displayName = isGroup ? chat.name : chat.user.username;
+
+        showConfirm(
+            'Delete Conversation',
+            `Delete ${displayName}? This will delete all messages in this conversation.`,
+            async () => {
+                try {
+                    await messageAPI.deleteConversation(type, targetId);
+                    const activeTargetId = activeChat
+                        ? (activeChat.type === 'group' || activeChat.isGroup ? activeChat._id : activeChat.user?._id || activeChat._id)
+                        : null;
+
+                    if (String(activeTargetId) === String(targetId)) {
+                        setActiveChat(null);
+                        setMessages([]);
+                        setShowGroupInfo(false);
+                    }
+
+                    await fetchConversations();
+                    showAlert('Deleted', 'Conversation deleted successfully', 'success');
+                } catch (err) {
+                    console.error('Failed to delete conversation', err);
+                    showAlert('Error', err.message || 'Failed to delete conversation', 'error');
                 }
             }
         );
@@ -950,9 +1052,17 @@ const ChatPage = () => {
                                 const displayName = isGroup ? chat.name : chat.user.username;
                                 const displayId = isGroup ? chat._id : chat.user._id;
                                 const avatarUrl = isGroup ? chat.avatarUrl : chat.user.avatarUrl;
+                                const conversationMenuId = `${isGroup ? 'group' : 'private'}:${displayId}`;
 
                                 return (
-                                    <ChatItem key={displayId + idx} onClick={() => handleSelectConversation(chat)} $active={activeChat?._id === displayId}>
+                                    <ChatItem
+                                        key={displayId + idx}
+                                        onClick={() => {
+                                            setActiveConversationMenu(null);
+                                            handleSelectConversation(chat);
+                                        }}
+                                        $active={activeChat?._id === displayId}
+                                    >
                                         <ChatAvatar>
                                             {avatarUrl ? (
                                                 <img
@@ -966,19 +1076,57 @@ const ChatPage = () => {
                                             {!isGroup && <StatusIndicator $online={canSeeStatus(chat.user) && onlineUsers?.has(chat.user._id)} />}
                                         </ChatAvatar>
                                         <ChatInfo>
-                                            <ChatName>{displayName} {isGroup && <span style={{ fontSize: '0.7rem', color: '#6B7280', fontWeight: 400 }}>(Group)</span>}</ChatName>
+                                            <ChatName>
+                                                {displayName} {isGroup && <span style={{ fontSize: '0.7rem', color: '#6B7280', fontWeight: 400 }}>(Group)</span>}
+                                                {chat.isPinned && <span style={{ fontSize: '0.7rem', color: '#6B7280', fontWeight: 500, marginLeft: '6px' }}>(Pinned)</span>}
+                                            </ChatName>
                                             <ChatMessage>
                                                 {chat.lastMessage?.isOwn ? 'You: ' : ''}
                                                 {chat.lastMessage?.text || 'No messages yet'}
                                             </ChatMessage>
                                         </ChatInfo>
-                                        {chat.lastMessage && (
-                                            <ChatMeta>
-                                                <ChatTime>
-                                                    {new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                </ChatTime>
-                                            </ChatMeta>
-                                        )}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                                            {chat.lastMessage && (
+                                                <ChatMeta>
+                                                    <ChatTime>
+                                                        {new Date(chat.lastMessage.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </ChatTime>
+                                                </ChatMeta>
+                                            )}
+                                            <ConversationActions onClick={(e) => e.stopPropagation()}>
+                                                <ConversationMenuButton
+                                                    type="button"
+                                                    onClick={() => setActiveConversationMenu(prev => prev === conversationMenuId ? null : conversationMenuId)}
+                                                >
+                                                    <FiMoreVertical size={16} />
+                                                </ConversationMenuButton>
+                                                {activeConversationMenu === conversationMenuId && (
+                                                    <ConversationMenu>
+                                                        <ConversationMenuItem
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setActiveConversationMenu(null);
+                                                                handleToggleConversationPin(chat);
+                                                            }}
+                                                        >
+                                                            <FiDisc size={12} />
+                                                            {chat.isPinned ? 'Unpin conversation' : 'Pin conversation'}
+                                                        </ConversationMenuItem>
+                                                        <ConversationMenuItem
+                                                            type="button"
+                                                            $danger
+                                                            onClick={() => {
+                                                                setActiveConversationMenu(null);
+                                                                handleDeleteConversation(chat);
+                                                            }}
+                                                        >
+                                                            <FiTrash2 size={13} />
+                                                            Delete conversation
+                                                        </ConversationMenuItem>
+                                                    </ConversationMenu>
+                                                )}
+                                            </ConversationActions>
+                                        </div>
                                     </ChatItem>
                                 );
                             })

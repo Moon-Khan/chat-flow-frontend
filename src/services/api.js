@@ -56,6 +56,8 @@ export const messageAPI = {
   getConversations: () => api.get('/api/messages/conversations'),
   createGroup: (groupData) => api.post('/api/messages/groups', groupData),
   leaveGroup: (chatId) => api.post(`/api/messages/groups/${chatId}/leave`),
+  setConversationPin: (type, targetId, pinned) => api.patch('/api/messages/conversations/pin', { type, targetId, pinned }),
+  deleteConversation: (type, targetId) => api.delete('/api/messages/conversations', { data: { type, targetId } }),
   uploadFiles: (formData) => api.post('/api/messages/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' }
   }),
